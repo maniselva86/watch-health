@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Health Summary</title>
+<style>
+:root{--bg:#000;--card:#1c1c1e;--t:#fff;--m:#8e8e93;--red:#fa114f}
+@media(prefers-color-scheme:light){:root{--bg:#f2f2f7;--card:#fff;--t:#000;--m:#6c6c70}}
+*{box-sizing:border-box}
+body{margin:0 auto;max-width:560px;padding:16px;background:var(--bg);color:var(--t);font:16px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+h1{font-size:34px;margin:8px 0 16px}
+.card{background:var(--card);border-radius:16px;padding:16px;margin-bottom:12px}
+.card h2{font-size:15px;margin:0 0 8px;color:var(--red)}
+.big{font-size:34px;font-weight:700}.big small{font-size:15px;color:var(--m);font-weight:500}
+.row{display:flex;gap:16px;align-items:center}.muted{color:var(--m)}
+input,button{width:100%;padding:12px;border-radius:10px;border:0;margin:4px 0;font-size:16px}
+button{background:var(--red);color:#fff;font-weight:600}
+svg{display:block}
+</style></head><body>
+<h1>Summary</h1>
+<div id="login" class="card"><h2>Sign in</h2>
+<input id="em" placeholder="Email" type="email"><input id="pw" placeholder="Password" type="password">
+<button id="go">Sign in</button><p id="msg" class="muted"></p></div>
+<div id="app" hidden>
+<div class="card"><h2>Activity</h2><div class="row">
+<svg id="ring" viewBox="0 0 100 100" width="110" height="110"></svg>
+<div><div class="big" id="steps">0 <small>steps</small></div><div class="muted">Goal 10,000</div></div></div></div>
+<div class="card"><h2>Heart Rate</h2><div class="big" id="hr">-- <small>BPM</small></div>
+<div id="rng" class="muted">No readings today</div>
+<svg id="chart" viewBox="0 0 300 80" width="100%"></svg></div>
+<button id="out">Sign out</button></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script>
+const sb=supabase.createClient("YOUR_SUPABASE_URL","YOUR_SUPABASE_ANON_KEY");
+const $=i=>document.getElementById(i);
+async function load(){
+  const d=new Date();d.setHours(0,0,0,0);
+  const {data,error}=await sb.from("readings").select("metric,value,ts").gte("ts",d.toISOString()).order("ts").limit(5000);
+  if(error){$("msg").textContent=error.message;return}
+  const st=data.filter(r=>r.metric=="steps").map(r=>r.value),hr=data.filter(r=>r.metric=="heart_rate").map(r=>r.value);
+  const steps=st.length?Math.round(Math.max(...st)-Math.min(...st)):0;
+  $("steps").innerHTML=steps.toLocaleString()+" <small>steps</small>";
+  const p=Math.min(steps/10000,1),c=2*Math.PI*38;
+  $("ring").innerHTML=`<circle cx="50" cy="50" r="38" fill="none" stroke="#fa114f33" stroke-width="14"/><circle cx="50" cy="50" r="38" fill="none" stroke="#fa114f" stroke-width="14" stroke-linecap="round" stroke-dasharray="${c*p} ${c}" transform="rotate(-90 50 50)"/>`;
+  if(hr.length){
+    const lo=Math.min(...hr),hi=Math.max(...hr);
+    $("hr").innerHTML=Math.round(hr[hr.length-1])+" <small>BPM</small>";
+    $("rng").textContent=`Range ${Math.round(lo)}–${Math.round(hi)} BPM today`;
+    const pts=hr.map((x,i)=>`${i*300/Math.max(hr.length-1,1)},${75-(x-lo)/Math.max(hi-lo,1)*70}`).join(" ");
+    $("chart").innerHTML=`<polyline points="${pts}" fill="none" stroke="#fa114f" stroke-width="2"/>`;
+  }
+}
+function show(s){$("login").hidden=!!s;$("app").hidden=!s;if(s)load()}
+$("go").onclick=async()=>{const {error}=await sb.auth.signInWithPassword({email:$("em").value,password:$("pw").value});if(error)$("msg").textContent=error.message};
+$("out").onclick=()=>sb.auth.signOut();
+sb.auth.onAuthStateChange((_,s)=>show(s));
+setInterval(()=>{if(!$("app").hidden)load()},60000);
+</script></body></html>
